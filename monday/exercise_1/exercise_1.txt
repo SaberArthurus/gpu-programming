@@ -1,0 +1,13 @@
+1. Version:
+Cuda compilation tools, release 7.0, V7.0.27
+
+
+2. 
+a) Device name:                GeForce GTX 750 Ti;
+   Compute capability:         5.0
+b) # multiprocessors:          5
+   # CUDA cores:               128 per processor / 640 total
+c) Global memory:              2047 MBytes
+d) # registers per block:      65536
+   shared memory per block:    49152 bytes
+   
