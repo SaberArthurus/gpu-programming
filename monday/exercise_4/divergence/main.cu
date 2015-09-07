@@ -30,13 +30,13 @@ __global__ void compute_div (float *d_imgIn, float *d_imgDiv, int w, int h, int 
     size_t ind = threadIdx.x + threadIdx.y * blockDim.x + blockIdx.x * blockDim.x * blockDim.y ;
     if (ind < size)
     {   
-        // Gradient in horizontal direction
-        bool isBoundary = (ind % w == w - 1); 
-        float horGrad = (isBoundary ? 0 : (d_imgIn[ind + 1] - d_imgIn[ind]));
+        // Backward difference gradient in horizontal direction
+        bool isBoundary = (ind % w == 0); 
+        float horGrad = (isBoundary ? 0 : (d_imgIn[ind] - d_imgIn[ind - 1]));
 
-        // Gradient in vertical direction
-        isBoundary = (ind % (w * h) >= (w * (h - 1)));
-        float verGrad = (isBoundary ? 0 : (d_imgIn[ind + w] - d_imgIn[ind]));
+        // Backward difference gradient in vertical direction
+        isBoundary = (ind % (w * h) < w);
+        float verGrad = (isBoundary ? 0 : (d_imgIn[ind ] - d_imgIn[ind - w]));
 
         d_imgDiv[ind] = horGrad + verGrad;
     }
