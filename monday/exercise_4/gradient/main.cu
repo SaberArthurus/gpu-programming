@@ -25,7 +25,7 @@ using namespace std;
 //#define CAMERA
 
 
-__global__ void compute_gradient (float *d_imgIn, float *d_imgGradHor, float *d_imgGradVer, int w, int h, int size)
+__global__ void gradient (float *d_imgIn, float *d_imgGradHor, float *d_imgGradVer, int w, int h, int nc, int size)
 {
     size_t ind = threadIdx.x + threadIdx.y * blockDim.x + blockIdx.x * blockDim.x * blockDim.y ;
     if (ind < size)
@@ -163,8 +163,8 @@ int main(int argc, char **argv)
     float *d_imgIn = NULL;
     float *d_imgGradHor = NULL;
     float *d_imgGradVer = NULL;
-    size_t imgSize = w * h * nc;
-    size_t nbytes = imgSize * sizeof(float);
+    size_t size = w * h * nc;
+    size_t nbytes = size * sizeof(float);
     cudaMalloc(&d_imgIn, nbytes); CUDA_CHECK;
     cudaMalloc(&d_imgGradHor, nbytes); CUDA_CHECK;
     cudaMalloc(&d_imgGradVer, nbytes); CUDA_CHECK;
@@ -174,13 +174,13 @@ int main(int argc, char **argv)
 
     // initialize block and grid size
     dim3 block = dim3(64, 1, 1); 
-    dim3 grid = dim3((imgSize + block.x * block.y * block.z - 1) / (block.x * block.y * block.z), 1, 1);
+    dim3 grid = dim3((size + block.x * block.y * block.z - 1) / (block.x * block.y * block.z), 1, 1);
    
     Timer timer; timer.start();
 
     for (int rep = 0; rep < repeats; rep++)
     {
-        compute_gradient <<<grid, block>>> (d_imgIn, d_imgGradHor, d_imgGradVer, w, h, imgSize);   
+        gradient <<<grid, block>>> (d_imgIn, d_imgGradHor, d_imgGradVer, w, h, nc, size);   
     }
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "average kernel time: " << t*1000/repeats << " ms" << endl;

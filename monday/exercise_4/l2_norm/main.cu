@@ -25,7 +25,7 @@ using namespace std;
 //#define CAMERA
 
 
-__global__ void l2_norm (float *d_imgIn, float *d_imgL2, int w, int h, int nc)
+__global__ void l2_norm (float *d_imgIn, float *d_imgL2, int w, int h, int nc, int size)
 {
     size_t ind = threadIdx.x + threadIdx.y * blockDim.x + blockIdx.x * blockDim.x * blockDim.y ;
     if (ind < w * h)
@@ -158,7 +158,8 @@ int main(int argc, char **argv)
     // Init image array on the device
     float *d_imgIn = NULL;
     float *d_imgL2 = NULL;
-    cudaMalloc(&d_imgIn, w * h * nc * sizeof(float)); CUDA_CHECK;
+    size_t size = w * h * nc;
+    cudaMalloc(&d_imgIn, size * sizeof(float)); CUDA_CHECK;
     cudaMalloc(&d_imgL2, w * h * sizeof(float)); CUDA_CHECK;
 
     // move from host to device memory
@@ -172,7 +173,7 @@ int main(int argc, char **argv)
 
     for (int rep = 0; rep < repeats; rep++)
     {
-        l2_norm <<<grid, block>>> (d_imgIn, d_imgL2, w, h, nc);   
+        l2_norm <<<grid, block>>> (d_imgIn, d_imgL2, w, h, nc, size);   
     }
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "average kernel time: " << t*1000/repeats << " ms" << endl;
