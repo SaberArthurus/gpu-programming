@@ -203,8 +203,8 @@ int main(int argc, char **argv)
                 {
                     for (int b = -r; b <= r; b++)
                     {
-                        int x_act = min(max(x + a, 0), w);
-                        int y_act = min(max(y + b, 0), h);
+                        int x_act = min(max(x + a, 0), w - 1);
+                        int y_act = min(max(y + b, 0), h - 1);
                         accumulated += imgIn[x_act + y_act * w + c * w * h] * imgKern[(r + a) + (r + b) * w_kernel];
                     }
                 }
