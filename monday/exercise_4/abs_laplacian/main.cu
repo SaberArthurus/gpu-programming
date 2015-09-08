@@ -32,7 +32,7 @@ __global__ void gradient (float *d_imgIn, float *d_imgHGrad, float *d_imgVGrad, 
     if (ind < w * h * nc)
     {   
         // Gradient in horizontal direction
-        bool isBoundary = (ind % w == w - 1); 
+        bool isBoundary = (ind % w == w - 1);  
         d_imgHGrad[ind] = (isBoundary ? 0 : (d_imgIn[ind + 1] - d_imgIn[ind]));
 
         // Gradient in vertical direction
@@ -66,8 +66,9 @@ __global__ void l2_norm (float *d_imgLapl, float *d_imgAbsLapl, int w, int h, in
         d_imgAbsLapl[ind] = 0;
         for (int c = 0; c < nc; c++)
         {
-            d_imgAbsLapl[ind] += d_imgLapl[ind + c * w * h];
+            d_imgAbsLapl[ind] += d_imgLapl[ind + c * w * h] * d_imgLapl[ind + c * w * h];
         }
+        d_imgAbsLapl[ind] = sqrt(d_imgAbsLapl[ind]);
     }
 }
 
@@ -235,11 +236,11 @@ int main(int argc, char **argv)
     cudaFree(d_imgAbsLapl); CUDA_CHECK;
 
     // // show input image
-    // showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
+    showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
 
     // // show output image: first convert to interleaved opencv format from the layered raw array
     convert_layered_to_mat(mAbsLapl, imgAbsLapl);
-    // showImage("L2 norm", mAbsLapl, 100+w+40, 100);
+    showImage("L2 of Laplacian", mAbsLapl, 100+w+40, 100);
 
     // ### Display your own output images here as needed
 
@@ -254,7 +255,7 @@ int main(int argc, char **argv)
 
     // save input and result
     cv::imwrite("image_input.png", mIn * 255.f);  // "imwrite" assumes channel range [0,255]
-    cv::imwrite("abs_of_laplacian.png", mAbsLapl * 255.f);
+    cv::imwrite("image_output.png", mAbsLapl * 255.f);
 
     // free allocated arrays
     delete[] imgIn;
