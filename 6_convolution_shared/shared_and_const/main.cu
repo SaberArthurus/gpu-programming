@@ -23,11 +23,17 @@ using namespace std;
 #include <cstdio>
 
 #define _USE_MATH_DEFINES
+// Standard deviation of the Gaussian
+#define KERNEL_MAX_RADIUS 20
+
+// Dimensions of the block
 #define BLOCK_SIZE_X 32
 #define BLOCK_SIZE_Y 8
 // uncomment to use the camera
-//#define CAMERA
+// #define CAMERA
+#define USE_CONST
 
+__constant__ float constKernel[(2 * KERNEL_MAX_RADIUS + 1) * (2 * KERNEL_MAX_RADIUS + 1)];
 
 __global__ void perform_convolution (float *d_imgIn, float *d_imgKern, float *d_imgOut, int w, int h, int nc, int r, int dim_share_x, int dim_share_y)
 {
@@ -83,8 +89,13 @@ __global__ void perform_convolution (float *d_imgIn, float *d_imgKern, float *d_
                     int sh_x = x + a - block_start_x + r;
                     int sh_y = y + b - block_start_y + r;
 
+#ifdef USE_CONST
                     accumulated += sh_imgIn[sh_x + sh_y * dim_share_x + chan * dim_share_x * dim_share_y]
-                    * d_imgKern[(r + a) + (r + b) * (2 * r + 1)];
+                    * constKernel[(r + a) + (r + b) * (2 * r + 1)]; // Using kernel in constant memory
+#else
+                    accumulated += sh_imgIn[sh_x + sh_y * dim_share_x + chan * dim_share_x * dim_share_y]
+                    * d_imgKern[(r + a) + (r + b) * (2 * r + 1)]; // Using the global kernel passed in as an argument
+#endif
                 }
             }
             d_imgOut[x + y * w + chan * w * h] = accumulated;
@@ -187,17 +198,16 @@ int main(int argc, char **argv)
     // -------------------------- KERNEL COMPUTATION ---------------------------
     int r = (int)ceil(3 * sigma);
     int w_kernel = 2 * r + 1;
-    int h_kernel = 2 * r + 1;
     int w_mid = r + 1;
     int h_mid = r + 1;
-    cv::Mat mKernel = cv::Mat::zeros(h_kernel, w_kernel, CV_32FC1);
+    cv::Mat mKernel = cv::Mat::zeros(w_kernel, w_kernel, CV_32FC1);
 
     // Normalize the kernel so that it sums up to 1
     float val = 0;
 
     for (int i = 0; i < w_kernel; i++)
     {
-        for (int j = 0; j < h_kernel; j++)
+        for (int j = 0; j < w_kernel; j++)
         {
             val = 1.0 / (2.0 * M_PI * sigma * sigma) * exp(-(pow(i - w_mid, 2) + pow(j - h_mid, 2)) / (2.0 * sigma * sigma));
             mKernel.at<float>(i, j) = val;
@@ -232,7 +242,7 @@ int main(int argc, char **argv)
     float *imgIn  = new float[(size_t)w*h*nc];
 
     // allocate the linearized kernel array
-    float *imgKern = new float[w_kernel * h_kernel];
+    float *imgKern = new float[w_kernel * w_kernel];
 
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
     float *imgOut = new float[(size_t)w*h*mOut.channels()];
@@ -269,12 +279,16 @@ int main(int argc, char **argv)
     float *d_imgKern = NULL;
     float *d_imgOut = NULL;
     cudaMalloc(&d_imgIn, w * h * nc * sizeof(float)); CUDA_CHECK;
-    cudaMalloc(&d_imgKern, w_kernel * h_kernel * sizeof(float)); CUDA_CHECK;
+    cudaMalloc(&d_imgKern, w_kernel * w_kernel * sizeof(float)); CUDA_CHECK;
     cudaMalloc(&d_imgOut, w * h * nc * sizeof(float)); CUDA_CHECK;
+
+    // Constant kernel
+    size_t kernel_bytes = w_kernel * w_kernel * sizeof(float);
+    cudaMemcpyToSymbol(constKernel, imgKern, kernel_bytes);
 
     // Move input img and kernel to the device
     cudaMemcpy(d_imgIn, imgIn, w * h * nc * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
-    cudaMemcpy(d_imgKern, imgKern, w_kernel * h_kernel * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
+    cudaMemcpy(d_imgKern, imgKern, w_kernel * w_kernel * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
     
 
 
@@ -289,14 +303,16 @@ int main(int argc, char **argv)
     size_t size_share_bytes = dim_share_x * dim_share_y * nc * sizeof(float);
 
     Timer timer; timer.start();
-    
-    perform_convolution <<<grid, block, size_share_bytes>>> (d_imgIn, d_imgKern, d_imgOut, w, h, nc, r, dim_share_x, dim_share_y);
+    for (int i = 0; i < repeats; i++)
+    {    
+        perform_convolution <<<grid, block, size_share_bytes>>> (d_imgIn, d_imgKern, d_imgOut, w, h, nc, r, dim_share_x, dim_share_y);
+    }
     timer.end();  float t = timer.get();  // elapsed time in seconds
-    
-    cout << "time: " << t*1000 << " ms" << endl;
-
-
-
+#ifdef USE_CONST    
+    cout << "Average time over " << repeats << " runs using kernel in const: " << t * 1000.0 / repeats << " ms" << endl;
+#else
+    cout << "Average time over " << repeats << " runs using kernel in shared: " << t * 1000.0 / repeats << " ms" << endl;
+#endif
 
 
     // ------------------------------ COLLECT DATA AND CLEAN UP ---------------------------------
