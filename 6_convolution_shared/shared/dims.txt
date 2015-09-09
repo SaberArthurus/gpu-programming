@@ -1,0 +1,4 @@
+ARRAY       |   dim
+d_imgIn		| w * h * nc * sizeof(float)
+d_imgOut	| w * h * nc * sizeof(float)
+d_imgKern	| w_kernel * h_kernel * sizeof(float)
