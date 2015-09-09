@@ -18,15 +18,28 @@
 
 #include "aux.h"
 #include <iostream>
+#include <cmath>
 using namespace std;
 
 
 #define BLOCK_SIZE_X 32
 #define BLOCK_SIZE_Y 8
 
+#define EPSILON 0.01
 // uncomment to use the camera
 //#define CAMERA
 
+__device__ float g_huber (float gradNorm)
+{
+    float eps = EPSILON;
+    return 1.0f / (max(eps, gradNorm));
+}
+
+__device__ float g_exp (float gradNorm)
+{
+    float eps = EPSILON;
+    return exp(- gradNorm * gradNorm / eps) / eps;
+}
 
 __global__ void compute_gradient (float *d_imgIn, float *d_gradH, float *d_gradV, int w, int h, int nc)
 {
@@ -58,33 +71,62 @@ __global__ void compute_gradient (float *d_imgIn, float *d_gradH, float *d_gradV
     }
 }
 
-__global__ void make_time_step (float *d_imgIn, float *d_gradH, float *d_gradV, int w, int h, int nc, float timeStep)
+__global__ void make_time_step (float *d_imgIn, float *d_gradH, float *d_gradV, int w, int h, int nc, float timeStep, char diffType)
 {
     // this kernel computes diffusivity g, div(g * grad) and updates the input images
     size_t x = threadIdx.x + blockIdx.x * blockDim.x;
     size_t y = threadIdx.y + blockIdx.y * blockDim.y;
 
-    float g = 1;     // diffusivity 
+
+    float g;     // diffusivity 
 
     if (x < w and y < h)
     {
         // 1-D index in the flattened array
         size_t ind = x + y * w;
+        
+   
+        // First, find the value of g
+        // To find g, compute the norm of the gradient
+        float gradNorm = 0;
+        for (int chan = 0; chan < nc; chan++)
+        {
+            int chan_offset = chan * w * h;
 
-        // All channels are updates within single kernel
+            gradNorm += d_gradH[ind + chan_offset] * d_gradH[ind + chan_offset];
+            gradNorm += d_gradV[ind + chan_offset] * d_gradV[ind + chan_offset];
+        }    
+        
+        gradNorm = sqrt(gradNorm);
+
+        switch (diffType)
+        {
+            case 'l':
+                g = 1;
+                break;
+            case 'h':
+                g = g_huber(gradNorm);
+                break;
+            case 'e':
+                g = g_exp(gradNorm);
+                break;
+        }
+
+        // Now calculate the divergence and update the image
         for (int chan = 0; chan < nc; chan++)
         {
             int chan_offset = chan * w * h;
 
             // Compute divergence of the gradient using backward differences
             bool isBoundary = (x == 0); 
-            float horGrad = (isBoundary ? d_gradH[ind + chan_offset] : (d_gradH[ind + chan_offset] - d_gradH[ind - 1 + chan_offset]));
+            float horGrad = (isBoundary ? g * d_gradH[ind + chan_offset] : g * (d_gradH[ind + chan_offset] - d_gradH[ind - 1 + chan_offset]));
 
             isBoundary = (y == 0);
-            float verGrad = (isBoundary ? d_gradV[ind + chan_offset] : (d_gradV[ind + chan_offset] - d_gradV[ind - w + chan_offset]));
+            float verGrad = (isBoundary ? g * d_gradV[ind + chan_offset] : g * (d_gradV[ind + chan_offset] - d_gradV[ind - w + chan_offset]));
 
-            d_imgIn[ind + chan_offset] += timeStep * g * (horGrad + verGrad);
+            d_imgIn[ind + chan_offset] += timeStep * (horGrad + verGrad);
         }
+
     }
 
 
@@ -135,6 +177,10 @@ int main(int argc, char **argv)
 
     cout << "Diffusion for " << numSteps << " steps with timestep = " << timeStep << endl; 
 
+    // type of diffusion
+    char diffType = 'l';
+    getParam("type", diffType, argc, argv);
+   
 
     // Init camera / Load input image
 #ifdef CAMERA
@@ -233,7 +279,7 @@ int main(int argc, char **argv)
     for (int i = 0; i < numSteps; i++)
     {
         compute_gradient <<<grid, block>>> (d_imgIn, d_gradH, d_gradV, w, h, nc);
-        make_time_step <<<grid, block>>> (d_imgIn, d_gradH, d_gradV, w, h, nc, timeStep);
+        make_time_step <<<grid, block>>> (d_imgIn, d_gradH, d_gradV, w, h, nc, timeStep, diffType);
     }
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;
