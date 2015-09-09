@@ -43,9 +43,9 @@ __global__ void perform_convolution (float *d_imgIn, float *d_imgKern, float *d_
             {
                 for (int b = -r; b <= r; b++)
                 {
-                    int x_act = min(max(x + a, 0), w - 1);
-                    int y_act = min(max(y + b, 0), h - 1);
-                    accumulated += tex2D(texRef, x_act + 0.5f, y_act + c * h + 0.5f) * d_imgKern[(r + a) + (r + b) * w_kernel];
+                    int y_act = min(max(y + b, 0), h - 1); // clamp for y, texture doesn't do it automatically  
+                                                           // because there's the next color layer there
+                    accumulated += tex2D(texRef, x + a + 0.5f, y_act + c * h + 0.5f) * d_imgKern[(r + a) + (r + b) * w_kernel];
                 }
             }
             d_imgOut[x + y * w + c * w * h] = accumulated;
