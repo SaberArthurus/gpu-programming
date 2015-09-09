@@ -26,18 +26,18 @@ using namespace std;
 
 
 
-__global__ void gradient (float *d_imgIn, float *d_imgHGrad, float *d_imgVGrad, int w, int h, int nc)
+__global__ void gradient (float *d_imgIn, float *d_gradH, float *d_gradV, int w, int h, int nc)
 {
     size_t ind = threadIdx.x + threadIdx.y * blockDim.x + blockIdx.x * blockDim.x * blockDim.y;
     if (ind < w * h * nc)
     {   
         // Gradient in horizontal direction
         bool isBoundary = (ind % w == w - 1);  
-        d_imgHGrad[ind] = (isBoundary ? 0 : (d_imgIn[ind + 1] - d_imgIn[ind]));
+        d_gradH[ind] = (isBoundary ? 0 : (d_imgIn[ind + 1] - d_imgIn[ind]));
 
         // Gradient in vertical direction
         isBoundary = (ind % (w * h) >= (w * (h - 1)));
-        d_imgVGrad[ind] = (isBoundary ? 0 : (d_imgIn[ind + w] - d_imgIn[ind]));
+        d_gradV[ind] = (isBoundary ? 0 : (d_imgIn[ind + w] - d_imgIn[ind]));
     }
 }
 
@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     // ### Define your own output images here as needed
 
     // Matrix for absolute of Laplacial
-    cv::Mat mAbsLapl(h, w, CV_32FC1);
+    cv::Mat mOut(h, w, CV_32FC1);
 
 
     // Allocate arrays
@@ -161,7 +161,7 @@ int main(int argc, char **argv)
     float *imgIn  = new float[(size_t)w * h * nc];
 
     // allocate raw output arrays for all the intermediate values
-    float *imgAbsLapl = new float[(size_t)w * h];
+    float *imgOut = new float[(size_t)w * h];
 
 
     // For camera mode: Make a loop to read in camera frames
@@ -177,7 +177,6 @@ int main(int argc, char **argv)
     mIn.convertTo(mIn,CV_32F);
     // convert range of each channel to [0,1] (opencv default is [0,255])
     mIn /= 255.f;
-    }
 #endif
 
     // Init raw input image array
@@ -226,7 +225,7 @@ int main(int argc, char **argv)
     cout << "average kernel time: " << t*1000/repeats << " ms" << endl;
 
     // copy result back to host memory
-    cudaMemcpy(imgAbsLapl, d_imgAbsLapl, w * h * sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;
+    cudaMemcpy(imgOut, d_imgAbsLapl, w * h * sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;
 
     // free the device memory
     cudaFree(d_imgIn); CUDA_CHECK;
@@ -239,8 +238,8 @@ int main(int argc, char **argv)
     showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
 
     // // show output image: first convert to interleaved opencv format from the layered raw array
-    convert_layered_to_mat(mAbsLapl, imgAbsLapl);
-    showImage("L2 of Laplacian", mAbsLapl, 100+w+40, 100);
+    convert_layered_to_mat(mOut, imgOut);
+    showImage("Output", mOut, 100+w+40, 100);
 
     // ### Display your own output images here as needed
 
@@ -255,11 +254,11 @@ int main(int argc, char **argv)
 
     // save input and result
     cv::imwrite("image_input.png", mIn * 255.f);  // "imwrite" assumes channel range [0,255]
-    cv::imwrite("image_output.png", mAbsLapl * 255.f);
+    cv::imwrite("image_output.png", mOut * 255.f);
 
     // free allocated arrays
     delete[] imgIn;
-    delete[] imgAbsLapl;
+    delete[] imgOut;
 
     // close all opencv windows
     cvDestroyAllWindows();
