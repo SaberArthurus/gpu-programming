@@ -1,20 +1,20 @@
-// ###
-// ###
 // ### Practical Course: GPU Programming in Computer Vision
-// ###
 // ###
 // ### Technical University Munich, Computer Vision Group
 // ### Summer Semester 2015, September 7 - October 6
 // ###
-// ###
 // ### Thomas Moellenhoff, Robert Maier, Caner Hazirbas
-// ###
-// ###
-// ###
-// ### THIS FILE IS SUPPOSED TO REMAIN UNCHANGED
-// ###
-// ###
+// ### 
 
+// ### Assignment 10 - Isotropic diffusion
+// ###
+// ### The program performs the isotropic diffusion iteration on the <image> for a total of <numSteps> steps of size <timeStep>
+// ### 
+// ### Usage: "./main -i <image> [-repeats <repeats>] [-gray] [-n <numSteps>] [-step <timeStep>] [-type <diffType>]"
+// ### diffType type can be l - linear, h - Hubert (g = 1 / max(eps, s)), e - exponential (g = exp(-s^2/eps)/eps)
+// ###
+// ### Size of the block is defined by BLOCK_SIZE_X, BLOCK_SIZE_Y
+// ### 
 
 #include "aux.h"
 #include <iostream>
@@ -140,8 +140,6 @@ int main(int argc, char **argv)
     cudaDeviceSynchronize();  CUDA_CHECK;
 
 
-
-
     // Reading command line parameters:
     // getParam("param", var, argc, argv) looks whether "-param xyz" is specified, and if so stores the value "xyz" in "var"
     // If "-param" is not specified, the value of "var" remains unchanged
@@ -154,7 +152,8 @@ int main(int argc, char **argv)
     string image = "";
     bool ret = getParam("i", image, argc, argv);
     if (!ret) cerr << "ERROR: no image specified" << endl;
-    if (argc <= 1) { cout << "Usage: " << argv[0] << " -i <image> [-repeats <repeats>] [-gray] [-n <numSteps>] [-step <timeStep>]" << endl; return 1; }
+    if (argc <= 1) { cout << "Usage: " << argv[0] << 
+        " -i <image> [-repeats <repeats>] [-gray] [-n <numSteps>] [-step <timeStep>] [-type <diffType>]" << endl; return 1; }
 #endif
     
     // number of computation repetitions to get a better run time measurement
