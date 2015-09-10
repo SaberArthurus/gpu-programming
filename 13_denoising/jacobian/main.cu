@@ -82,7 +82,7 @@ __global__ void compute_gradient (float *d_imgIn, float *d_gradH, float *d_gradV
 }
 
 __global__ void perform_update (float *d_imgIn, float *d_solOld, float *d_gradH, float *d_gradV, float *d_g, float *d_solNew, 
-                                int w, int h, int nc, float lambda, char solver)
+                                int w, int h, int nc, float lambda)
 {
     // this kernel computes diffusivity g in each direction and performs one step of Jacobi iteration
     size_t x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -152,24 +152,15 @@ int main(int argc, char **argv)
     getParam("gray", gray, argc, argv);
     cout << "gray: " << gray << endl;
 
-    // number of timeSteps to take
-    int numSteps = 10;
+    // number of steps to take
+    int numSteps = 100;
     getParam("n", numSteps, argc, argv);
     
-    // size of the time step
-    float timeStep = 0.1;
-    getParam("step", timeStep, argc, argv);
-
     // regularization parameter
     float lambda = 0.1;
     getParam("lambda", lambda, argc, argv);
 
-    // regularization parameter
-    char solver = 'j';
-    getParam("solver", solver, argc, argv);
-
-
-    cout << "Denoising with tau = " << timeStep << ", N = " << numSteps << ", lambda = " << lambda << endl;
+    cout << "Denoising with N = " << numSteps << ", lambda = " << lambda << endl;
    
 
 
@@ -272,12 +263,11 @@ int main(int argc, char **argv)
     dim3 block = dim3(BLOCK_SIZE_X, BLOCK_SIZE_Y, 1); 
     dim3 grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
 
-    // d_imgIn, d_solOld, d_gradH, d_gradV, d_g, d_solNew
     Timer timer; timer.start();
     for (int i = 0; i < numSteps; i++)
     {
         compute_gradient <<<grid, block>>> (d_imgIn, d_gradH, d_gradV, d_g, w, h, nc);
-        perform_update <<<grid, block>>> (d_imgIn, d_solOld, d_gradH, d_gradV, d_g, d_solNew, w, h, nc, lambda, solver);
+        perform_update <<<grid, block>>> (d_imgIn, d_solOld, d_gradH, d_gradV, d_g, d_solNew, w, h, nc, lambda);
         cudaMemcpy(d_solOld, d_solNew, w * h * nc * sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
     }
     timer.end();  float t = timer.get();  // elapsed time in seconds
