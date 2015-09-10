@@ -26,6 +26,11 @@ using namespace std;
 #define BLOCK_SIZE_Y 8
 
 #define EPSILON 0.01
+
+// Choice of iteration for red-black Gauss-Seidel
+#define RED 0
+#define BLACK 1
+
 // uncomment to use the camera
 //#define CAMERA
 
@@ -36,7 +41,7 @@ __device__ float compute_g (float gradNorm)
 }
 
 
-__global__ void compute_gradient (float *d_imgIn, float *d_gradH, float *d_gradV, float *d_g, int w, int h, int nc)
+__global__ void compute_gradient_and_diffusivity (float *d_imgIn, float *d_gradH, float *d_gradV, float *d_g, int w, int h, int nc)
 {
     // d_imgIn, d_gradH and d_gradV are (w * h) * nc images
     // this kernel calculated the derivatives of each pixel in hor and vert directions,
@@ -82,7 +87,7 @@ __global__ void compute_gradient (float *d_imgIn, float *d_gradH, float *d_gradV
 }
 
 __global__ void perform_update (float *d_imgIn, float *d_solOld, float *d_gradH, float *d_gradV, float *d_g, float *d_solNew, 
-                                int w, int h, int nc, float lambda, char solver)
+                                int w, int h, int nc, float lambda, float theta, int color)
 {
     // this kernel computes diffusivity g in each direction and performs one step of Jacobi iteration
     size_t x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -93,22 +98,27 @@ __global__ void perform_update (float *d_imgIn, float *d_solOld, float *d_gradH,
     {
         // 1-D index in the flattened array
         size_t ind = x + y * w;
-           
-        // Find the values of diffusivity in each direction if they exist
-        int g_r, g_l, g_u, g_d;
-        g_r = (x + 1 < w) * d_g[x + y * w];
-        g_l = (x > 0) * d_g[x - 1 + y * w];
-        g_u = (y + 1 < h) * d_g[x + y * w];
-        g_d = (y > 0) * d_g[x + (y - 1) * w];
-
-        // Now calculate the divergence and perform one update
-        for (int chan = 0; chan < nc; chan++)
+        
+        // Check if this pixel is to be updated on this iteration
+        if ((x + y) % 2 == color)
         {
-            int chan_offset = chan * w * h;
-            // Compute divergence of the gradient using backward differences
-            d_solNew[ind + chan_offset] = (2 * d_imgIn[ind + chan_offset] + lambda * g_r * d_solOld[ind + 1 + chan_offset] + 
-                    lambda * g_l * d_solOld[ind - 1 + chan_offset] + lambda * g_u * d_solOld[ind + w + chan_offset] + 
-                    lambda * g_d * d_solOld[ind - w + chan_offset]) / (2 + lambda * (g_r + g_l + g_u + g_d));
+            // Find the values of diffusivity in each direction if they exist
+            int g_r, g_l, g_u, g_d;
+            g_r = (x + 1 < w) * d_g[x + y * w];
+            g_l = (x > 0) * d_g[x - 1 + y * w];
+            g_u = (y + 1 < h) * d_g[x + y * w];
+            g_d = (y > 0) * d_g[x + (y - 1) * w];
+
+            // Now calculate the divergence and perform one update
+            for (int chan = 0; chan < nc; chan++)
+            {
+                int chan_offset = chan * w * h;
+                // Compute the value of the update for specific channel
+                float update = (2 * d_imgIn[ind + chan_offset] + lambda * g_r * d_solOld[ind + 1 + chan_offset] + 
+                        lambda * g_l * d_solOld[ind - 1 + chan_offset] + lambda * g_u * d_solOld[ind + w + chan_offset] + 
+                        lambda * g_d * d_solOld[ind - w + chan_offset]) / (2 + lambda * (g_r + g_l + g_u + g_d));
+                d_solNew[ind + chan_offset] = update + theta * (update - d_solOld[ind + chan_offset]);
+            }
         }
 
     }
@@ -156,20 +166,16 @@ int main(int argc, char **argv)
     int numSteps = 10;
     getParam("n", numSteps, argc, argv);
     
-    // size of the time step
-    float timeStep = 0.1;
-    getParam("step", timeStep, argc, argv);
-
     // regularization parameter
     float lambda = 0.1;
     getParam("lambda", lambda, argc, argv);
 
-    // regularization parameter
-    char solver = 'j';
-    getParam("solver", solver, argc, argv);
+    // successive over relaxation parameter
+    float theta = 0.5;
+    getParam("theta", theta, argc, argv);
 
 
-    cout << "Denoising with tau = " << timeStep << ", N = " << numSteps << ", lambda = " << lambda << endl;
+    cout << "Denoising with N = " << numSteps << ", lambda = " << lambda << ", theta = " << theta << endl;
    
 
 
@@ -276,8 +282,10 @@ int main(int argc, char **argv)
     Timer timer; timer.start();
     for (int i = 0; i < numSteps; i++)
     {
-        compute_gradient <<<grid, block>>> (d_imgIn, d_gradH, d_gradV, d_g, w, h, nc);
-        perform_update <<<grid, block>>> (d_imgIn, d_solOld, d_gradH, d_gradV, d_g, d_solNew, w, h, nc, lambda, solver);
+        compute_gradient_and_diffusivity <<<grid, block>>> (d_imgIn, d_gradH, d_gradV, d_g, w, h, nc);
+        perform_update <<<grid, block>>> (d_imgIn, d_solOld, d_gradH, d_gradV, d_g, d_solNew, w, h, nc, lambda, theta, RED);
+        cudaMemcpy(d_solOld, d_solNew, w * h * nc * sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
+        perform_update <<<grid, block>>> (d_imgIn, d_solOld, d_gradH, d_gradV, d_g, d_solNew, w, h, nc, lambda, theta, BLACK);
         cudaMemcpy(d_solOld, d_solNew, w * h * nc * sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
     }
     timer.end();  float t = timer.get();  // elapsed time in seconds
